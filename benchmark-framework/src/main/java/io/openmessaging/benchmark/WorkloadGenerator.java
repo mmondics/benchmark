@@ -20,6 +20,7 @@ import io.openmessaging.benchmark.utils.PaddingDecimalFormat;
 import io.openmessaging.benchmark.utils.RandomGenerator;
 import io.openmessaging.benchmark.utils.Timer;
 import io.openmessaging.benchmark.utils.payload.FilePayloadReader;
+import io.openmessaging.benchmark.utils.payload.JsonArrayPayloadReader;
 import io.openmessaging.benchmark.utils.payload.MessageSizeDistribution;
 import io.openmessaging.benchmark.utils.payload.PayloadReader;
 import io.openmessaging.benchmark.worker.Worker;
@@ -70,9 +71,14 @@ public class WorkloadGenerator implements AutoCloseable {
 
     public TestResult run() throws Exception {
         Timer timer = new Timer();
-        List<String> topics =
-                worker.createTopics(new TopicsInfo(workload.topics, workload.partitionsPerTopic));
-        log.info("Created {} topics in {} ms", topics.size(), timer.elapsedMillis());
+        List<String> topics;
+        if (workload.existingTopic != null) {
+            topics = Collections.singletonList(workload.existingTopic);
+            log.info("Using existing topic {}", workload.existingTopic);
+        } else {
+            topics = worker.createTopics(new TopicsInfo(workload.topics, workload.partitionsPerTopic));
+            log.info("Created {} topics in {} ms", topics.size(), timer.elapsedMillis());
+        }
 
         createConsumers(topics);
         createProducers(topics);
@@ -101,7 +107,15 @@ public class WorkloadGenerator implements AutoCloseable {
         producerWorkAssignment.publishRate = targetPublishRate;
         producerWorkAssignment.payloadData = new ArrayList<>();
 
-        if (workload.usesDistribution()) {
+        if (workload.payloadJsonArrayFile != null) {
+            // Each element of the JSON array is a payload; the worker picks one at random per message
+            producerWorkAssignment.payloadData.addAll(
+                    new JsonArrayPayloadReader().load(workload.payloadJsonArrayFile));
+            log.info(
+                    "Loaded {} payloads from {}",
+                    producerWorkAssignment.payloadData.size(),
+                    workload.payloadJsonArrayFile);
+        } else if (workload.usesDistribution()) {
             // Distribution mode: create one payload per bucket with weighted selection at runtime
             MessageSizeDistribution dist = new MessageSizeDistribution(workload.messageSizeDistribution);
             List<Integer> sizes = dist.getBucketMaxSizes();
@@ -180,6 +194,11 @@ public class WorkloadGenerator implements AutoCloseable {
         // some message on the topic, which will then trigger the partitions assignment to the consumers
 
         int expectedMessages = workload.topics * workload.subscriptionsPerTopic;
+
+        if (expectedMessages == 0) {
+            // No consumers to wait for; skip the probe so no junk message is published
+            return;
+        }
 
         // In this case we just publish 1 message and then wait for consumers to receive the data
         worker.probeProducers();

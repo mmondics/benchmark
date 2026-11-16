@@ -20,6 +20,12 @@ import java.util.Map;
 public class Workload {
     public String name;
 
+    /**
+     * If set, the workload publishes to this already existing topic instead of creating new randomly
+     * named topics. Requires topics: 1.
+     */
+    public String existingTopic;
+
     /** Number of topics to create in the test. */
     public int topics;
 
@@ -52,6 +58,13 @@ public class Workload {
     public int randomizedPayloadPoolSize;
 
     public String payloadFile;
+
+    /**
+     * Path to a file holding a JSON array. Each array element becomes one payload, and the producer
+     * sends a randomly selected element for every message. When set, messageSize and payloadFile are
+     * ignored.
+     */
+    public String payloadJsonArrayFile;
 
     public int subscriptionsPerTopic;
 
